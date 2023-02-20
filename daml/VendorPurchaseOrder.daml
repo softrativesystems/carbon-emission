@@ -1,0 +1,213 @@
+
+{--
+--}
+
+
+module VendorPurchaseOrder
+    where
+    type IdentificationKey=(Party,Text)
+    data PurchaseTypeEnum = DomesticRefiner | OverseasRefiner | WholeSaler
+     deriving (Eq, Show)
+    data FeulTypeEnum = Desiel | Coal | Electricity 
+     deriving (Eq, Show)
+    data UnitTypeEnum = Litre | KG | KiloWatt
+     deriving (Eq, Show)
+    data  Status = PENDING | ACCEPTED | REJECTED | DELIVERED
+     deriving (Eq, Show)
+
+    template VendorPurchaseOrder 
+        with
+          mininigCompany: Party
+          vendor: Party
+          purchaseType: PurchaseTypeEnum
+          quantity: Decimal
+          unit: UnitTypeEnum
+          fuelType: FeulTypeEnum
+          deliveryDate: Date
+          deliveryLocation: Text
+          purchaseOrderId: Text
+          poStatus: Status
+        where 
+        signatory mininigCompany
+        observer vendor
+        key (mininigCompany,purchaseOrderId): IdentificationKey
+        maintainer key._1
+
+        choice AcceptPurchaseOrder: ContractId FuelQuote 
+          with
+            rate : Decimal  
+            quoteId : Text   
+            pickUpLocation:Text
+            pickupDate:Date  
+          controller vendor 
+            do
+              now <- getTime   
+              pid <- create this with poStatus=ACCEPTED        
+              create FuelQuote with
+                purchaseOrderId = pid
+                mininigCompany=mininigCompany
+                vendor = vendor
+                fuelQuoteId = quoteId
+                quotationCreationdate = now
+                pricePerUnit = rate
+                totalPrice= quantity * rate
+                qouteStatus=PENDING
+                pickupLocaton=pickUpLocation
+                pickupDate=pickupDate
+
+    template FuelQuote 
+        with 
+          purchaseOrderId : ContractId VendorPurchaseOrder
+          mininigCompany : Party
+          vendor : Party
+          fuelQuoteId : Text
+          quotationCreationdate : Time
+          pricePerUnit : Decimal
+          totalPrice : Decimal
+          qouteStatus : Status
+          pickupLocaton: Text
+          pickupDate : Date 
+        where 
+        signatory vendor
+        observer mininigCompany
+        key (vendor,fuelQuoteId): IdentificationKey
+        maintainer key._1
+
+        choice AcceptQuote: (ContractId FuelQuote,ContractId TransportOrder) 
+          with
+              
+            transportOrderId : Text   
+            transporterCo :Party
+            vendorCo : Party
+            transportOrderDate: Date
+            quantity : Decimal
+            deliveryLoc:Text
+            deliveryDt:Date
+          controller mininigCompany 
+            do
+               now <- getTime           
+               poid <-  create this with qouteStatus=ACCEPTED
+              --  Transport order  is created for  transporter
+               quoteId <- create TransportOrder with
+                                 transportId=transportOrderId
+                                 mininigCompany=mininigCompany
+                                 transporter=transporterCo
+                                 vendor=vendorCo
+                                 quantity=quantity
+                                 deliveryLocation=deliveryLoc
+                                 pickUpLocation=pickupLocaton
+                                 deliveryDate=deliveryDt
+                                 pickupDate=pickupDate
+                                 transportStatus=PENDING
+                                 transportOrderdate=transportOrderDate
+
+                                
+               return (poid,quoteId)
+    template TransportOrder
+        with 
+          transportId: Text
+          mininigCompany : Party
+          transporter :Party
+          vendor : Party
+          quantity : Decimal
+          deliveryLocation:Text 
+          pickUpLocation : Text
+          deliveryDate: Date
+          pickupDate: Date
+          transportStatus: Status
+          transportOrderdate:Date
+        where 
+         signatory mininigCompany
+         observer transporter,vendor
+         key (mininigCompany,transportId): IdentificationKey
+         maintainer key._1
+         choice AcceptTransportOrder: (ContractId TransportQuote) 
+          with
+              
+            transportQuoteIdId : Text   
+            
+            
+            cost : Decimal
+           
+            quoteDate:Date
+          controller transporter 
+            do
+               now <- getTime           
+               trnid <-  create this with transportStatus=ACCEPTED
+              --  Transport order  is created for  transporter
+               create TransportQuote with
+                                 transportQuoteIdId=transportQuoteIdId
+                                 transportOrder=trnid
+                                 transporter=transporter
+                                 vendor=vendor
+                                 mininigCompany= mininigCompany
+                                 transportationCost=cost
+                                 transportQuoteDate=quoteDate
+                                 transportQuoteStatus=ACCEPTED
+
+
+
+                               
+                              
+
+                                
+            
+
+    template TransportQuote
+        with 
+         transportQuoteIdId : Text
+         transportOrder : ContractId TransportOrder
+         transporter:Party
+         vendor : Party
+         mininigCompany : Party
+         transportationCost: Decimal
+         transportQuoteDate : Date
+         transportQuoteStatus : Status
+        where 
+         signatory transporter
+         observer  mininigCompany,transporter
+         key (transporter,transportQuoteIdId): IdentificationKey
+         maintainer key._1
+         choice AcceptTrnQuote : (ContractId TransportQuote,ContractId DeliveryAcknowledgement)
+          with 
+           receiptId :Text
+           receiptDate: Date
+          controller mininigCompany 
+            do
+              acceptedTrnQuoteId <-create this with transportQuoteStatus=ACCEPTED
+              deliveryAcknowledgementId <- create DeliveryAcknowledgement with 
+                                           receiptId=receiptId
+                                           mininigCompany = mininigCompany
+                                           vendor=vendor
+                                           transporter=transporter
+                                           receiptDate=receiptDate
+                                           deliveryStatus=DELIVERED
+                                         
+
+              return (acceptedTrnQuoteId,deliveryAcknowledgementId)
+                
+    template DeliveryAcknowledgement
+       with 
+         receiptId: Text
+         mininigCompany : Party
+         vendor: Party 
+         transporter: Party
+         receiptDate:Date
+         deliveryStatus:Status
+       where
+         signatory transporter
+         observer  mininigCompany,vendor
+         key (transporter,receiptId): IdentificationKey
+         maintainer key._1
+         choice AcknowledgeDelivery : ContractId DeliveryAcknowledgement 
+          controller mininigCompany 
+           do
+           create this with deliveryStatus=DELIVERED
+
+              
+
+         
+         
+        
+
+        

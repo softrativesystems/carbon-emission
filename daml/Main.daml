@@ -1,0 +1,78 @@
+module Main where
+
+import Daml.Script
+import VendorPurchaseOrder
+
+import DA.Date
+
+
+setup : Script()
+setup = script 
+ do
+-- user_setup_begin
+   company <- allocatePartyWithHint "Company" (PartyIdHint "Company")
+   vendor <- allocatePartyWithHint "Vendor" (PartyIdHint "Vendor")
+   
+   transporter <- allocatePartyWithHint "Transporter" (PartyIdHint "Transporter")
+   companyId <- validateUserId "company"
+   vendorId <- validateUserId "vendor"
+   transporterId <- validateUserId "transporter"
+   createUser (User companyId (Some company)) [CanActAs company]
+   createUser (User vendorId (Some vendor)) [CanActAs vendor]
+   createUser (User transporterId (Some transporter)) [CanActAs transporter]
+-- user_setup_end
+   let deliveryLoc="India"
+   let pickUpLocation="Australia"
+   let quantity= 10.0
+--Contract Creation
+   purchaseOrderId <- submit company do
+     createCmd VendorPurchaseOrder
+       with 
+        mininigCompany = company
+        vendor = vendor
+        purchaseType=WholeSaler
+        quantity= quantity
+        unit= Litre
+        fuelType= Desiel
+        deliveryDate= date 2023 Feb 16
+        deliveryLocation= "MineSite1"
+        purchaseOrderId= "po_001"
+        poStatus=PENDING
+   quoteId <- submit vendor do 
+    exerciseCmd purchaseOrderId AcceptPurchaseOrder
+       with 
+          rate = 100.00
+          quoteId = "quote_001"
+          pickUpLocation=pickUpLocation
+          pickupDate=date 2023 Feb 16
+   (quoteId,trnsOrderId) <- submit company do 
+    exerciseCmd quoteId AcceptQuote
+       with 
+          transportOrderId = "trns_001"
+          transporterCo=transporter
+          vendorCo = vendor
+          transportOrderDate= date 2023 Feb 18 
+          quantity = quantity
+          deliveryLoc=deliveryLoc
+          deliveryDt=date 2023 Feb 19
+   trnsQuoteId <- submit transporter do
+    exerciseCmd trnsOrderId  AcceptTransportOrder 
+      with 
+        transportQuoteIdId="trnQuote_001"
+        cost=200.00
+        quoteDate=date 2023 Feb 19
+   (acceptedTrnQuote,acknowedgeId)   <-   submit company  do
+         exerciseCmd trnsQuoteId AcceptTrnQuote
+          with 
+           receiptId="receipt_001"
+           receiptDate= date 2023 Feb 20
+   submit company do 
+          exerciseCmd acknowedgeId AcknowledgeDelivery
+
+                         
+
+   return () 
+        
+
+
+  
